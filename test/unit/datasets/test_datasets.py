@@ -1,11 +1,12 @@
 # Copyright (c) Fairlearn contributors.
 # Licensed under the MIT License.
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pytest
 
 from fairlearn.datasets import (
+    fetch_acs_income,
     fetch_adult,
     fetch_bank_marketing,
     fetch_boston,
@@ -21,6 +22,7 @@ class TestFairlearnDataset:
     @pytest.mark.parametrize(
         "fetch_function",
         [
+            fetch_acs_income,
             fetch_adult,
             fetch_bank_marketing,
             fetch_boston,
@@ -47,6 +49,7 @@ class TestFairlearnDataset:
     @pytest.mark.parametrize(
         "fetch_function",
         [
+            fetch_acs_income,
             fetch_adult,
             fetch_bank_marketing,
             fetch_boston,

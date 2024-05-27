@@ -3,8 +3,7 @@
 
 import pathlib
 
-import numpy as np
-import pandas as pd
+import narwhals as nw
 from sklearn.datasets import fetch_openml
 
 from ._constants import _DOWNLOAD_DIRECTORY_NAME
@@ -192,25 +191,28 @@ def fetch_acs_income(
         parser="auto",
     )
 
-    # filter by state
-    df_all = data_dict["data"].copy(deep=True)
-    df_all["PINCP"] = data_dict["target"]
-    cols = df_all.columns
-    df = pd.DataFrame(np.zeros((0, len(cols))), columns=cols)
-    for state in states:
-        dfs = [df, df_all.query(f"ST == {int(_STATE_CODES[state])}")]
-        df = pd.concat(dfs)
-    # drop the state column since it is not a feature in the published ACSIncome dataset
-    df.drop("ST", axis=1, inplace=True)
+    df_all_nw = nw.from_native(data_dict["data"].copy(deep=True))
+    df_nw = (
+        df_all_nw.with_columns(
+            nw.from_native(data_dict["target"], allow_series=True).alias("PINCP")
+        )
+        # filter by state
+        .filter(nw.col("ST").is_in([int(_STATE_CODES[state]) for state in states]))
+        # drop the state column since it is not a feature in the published ACSIncome dataset
+        .drop("ST")
+    )
 
+    # NOTE: is there a `.iloc` alternative in narwhals?
+    target_col = df_nw.columns[_NUM_FEATS]
+    feature_cols = df_nw.columns[:_NUM_FEATS]
     if as_frame:
-        data_dict["data"] = df.iloc[:, :_NUM_FEATS]
-        data_dict["frame"] = df
-        data_dict["target"] = df.iloc[:, _NUM_FEATS]
+        data_dict["data"] = df_nw.select(feature_cols).to_pandas()
+        data_dict["frame"] = df_nw.to_pandas()
+        data_dict["target"] = df_nw[target_col].to_pandas()
     else:
-        data_dict["data"] = df.iloc[:, :_NUM_FEATS].values
+        data_dict["data"] = df_nw.select(feature_cols).to_numpy()
         data_dict["frame"] = None
-        data_dict["target"] = df.iloc[:, _NUM_FEATS].values
+        data_dict["target"] = df_nw.select(target_col).to_numpy()
 
     output = data_dict
 
