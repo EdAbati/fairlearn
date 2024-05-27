@@ -5,6 +5,7 @@ import logging
 import warnings
 from typing import Callable, Dict, List, Optional
 
+import narwhals as nw
 import numpy as np
 import pandas as pd
 
@@ -94,14 +95,15 @@ class AnnotatedMetricFunction:
         expected types are passed to the underlying metric function.
         """
         args = []
+        df_nw = nw.from_native(df, eager_only=True)
         for arg_name in self.postional_argument_names:
             # Need to convert to list first in case we have 2D arrays
-            args.append(np.asarray(list(df[arg_name])))
+            args.append(np.asarray(list(df_nw[arg_name])))
 
         kwargs = dict()
         for func_arg_name, data_arg_name in self.kw_argument_mapping.items():
             # Need to convert to list first in case we have 2D arrays
-            kwargs[func_arg_name] = np.asarray(list(df[data_arg_name]))
+            kwargs[func_arg_name] = np.asarray(list(df_nw[data_arg_name]))
 
         result = self.func(*args, **kwargs)
 
