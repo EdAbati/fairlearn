@@ -24,3 +24,5 @@ filterwarnings = [
     # Warnings in other-ml (tensorflow)
     "default:The initializer GlorotNormal is unseeded:UserWarning",
 ]
+# TODO: remove
+addopts = "-n 8"
