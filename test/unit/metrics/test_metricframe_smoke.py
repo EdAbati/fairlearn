@@ -373,7 +373,7 @@ def test_2m_1sf_sample_weights():
 
 def test_duplicate_sf_names():
     groups = pd.DataFrame(np.stack([g_2, g_3], axis=1), columns=["A", "A"])
-    msg = "Detected duplicate feature name: 'A'"
+    msg = "Expected unique column names, got 'A' 2 time(s)"
     with pytest.raises(ValueError) as execInfo:
         _ = metrics.MetricFrame(
             metrics=skm.recall_score,
@@ -386,7 +386,7 @@ def test_duplicate_sf_names():
 
 def test_duplicate_cf_names():
     groups = pd.DataFrame(np.stack([g_2, g_3], axis=1), columns=["B", "B"])
-    msg = "Detected duplicate feature name: 'B'"
+    msg = "Expected unique column names, got 'B' 2 time(s)"
     with pytest.raises(ValueError) as execInfo:
         _ = metrics.MetricFrame(
             metrics=skm.recall_score,

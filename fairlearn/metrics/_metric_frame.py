@@ -4,6 +4,7 @@
 import logging
 from typing import Any, Callable, Dict, List, Optional, Union
 
+import narwhals as nw
 import numpy as np
 import pandas as pd
 from sklearn.utils import check_consistent_length
@@ -470,7 +471,7 @@ class MetricFrame:
     @property
     def overall(
         self,
-    ) -> Union[Any, pd.Series, pd.DataFrame,]:
+    ) -> Union[Any, pd.Series, pd.DataFrame]:
         """Return the underlying metrics evaluated on the whole dataset.
 
         Read more in the :ref:`User Guide <assessment_quantify_harms>`.
@@ -507,7 +508,7 @@ class MetricFrame:
     @property
     def overall_ci(
         self,
-    ) -> List[Union[Any, pd.Series, pd.DataFrame,]]:
+    ) -> List[Union[Any, pd.Series, pd.DataFrame]]:
         """Return the underlying bootstrapped metrics evaluated on the whole dataset.
 
         When bootstrapping has been activated (by `n_boot` and `ci_quantiles` in the
@@ -972,18 +973,27 @@ class MetricFrame:
         """Extract the features into :class:`fairlearn.metrics.GroupFeature` objects."""
         result = []
 
-        if isinstance(features, pd.Series):
-            check_consistent_length(features, sample_array)
-            result.append(GroupFeature(base_name, features, 0, None))
-        elif isinstance(features, pd.DataFrame):
-            for i in range(len(features.columns)):
-                col_name = features.columns[i]
-                if not isinstance(col_name, str):
-                    msg = _FEATURE_DF_COLUMN_BAD_NAME.format(col_name, type(col_name))
-                    raise ValueError(msg)
-                column = features.iloc[:, i]
-                check_consistent_length(column, sample_array)
-                result.append(GroupFeature(base_name, column, i, None))
+        if isinstance(features, dict):
+            try:
+                features = pd.DataFrame.from_dict(features)
+            except ValueError as ve:
+                raise ValueError(_SF_DICT_CONVERSION_FAILURE) from ve
+
+        if not isinstance(features, (list, np.ndarray)):
+            features_nw = nw.from_native(features, allow_series=True, eager_only=True)
+            if isinstance(features_nw, nw.Series):
+                check_consistent_length(features_nw, sample_array)
+                result.append(GroupFeature(base_name, features_nw, 0, None))
+            else:
+                for i, col_name in enumerate(features_nw.columns):
+                    if not isinstance(col_name, str):
+                        msg = _FEATURE_DF_COLUMN_BAD_NAME.format(
+                            col_name, type(col_name)
+                        )
+                        raise ValueError(msg)
+                    column = features_nw[col_name]
+                    check_consistent_length(column, sample_array)
+                    result.append(GroupFeature(base_name, column, i, None))
         elif isinstance(features, list):
             if np.isscalar(features[0]):
                 f_arr = np.atleast_1d(np.squeeze(np.asarray(features)))
@@ -992,19 +1002,6 @@ class MetricFrame:
                 result.append(GroupFeature(base_name, f_arr, 0, None))
             else:
                 raise ValueError(_FEATURE_LIST_NONSCALAR)
-        elif isinstance(features, dict):
-            try:
-                df = pd.DataFrame.from_dict(features)
-            except ValueError as ve:
-                raise ValueError(_SF_DICT_CONVERSION_FAILURE) from ve
-            for i in range(len(df.columns)):
-                col_name = df.columns[i]
-                if not isinstance(col_name, str):
-                    msg = _FEATURE_DF_COLUMN_BAD_NAME.format(col_name, type(col_name))
-                    raise ValueError(msg)
-                column = df.iloc[:, i]
-                check_consistent_length(column, sample_array)
-                result.append(GroupFeature(base_name, column, i, None))
         else:
             # Need to specify dtype to avoid inadvertent type conversions
             f_arr = np.squeeze(np.asarray(features, dtype=object))

@@ -89,8 +89,7 @@ class TestSingleFeature:
 
         target = _get_raw_MetricFrame()
         msg = (
-            "DataFrame column names must be strings. Name '0' is of type <class"
-            " 'numpy.int64'>"
+            "DataFrame column names must be strings. Name '0' is of type <class 'int'>"
         )
         with pytest.raises(ValueError) as execInfo:
             _ = target._process_features("Unused", raw_feature, y_true)

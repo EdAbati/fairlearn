@@ -3,6 +3,7 @@
 
 from typing import Optional
 
+import narwhals as nw
 import numpy as np
 import pandas as pd
 
@@ -48,18 +49,28 @@ class GroupFeature:
 
     def __init__(self, base_name: str, feature_vector, index: int, name: Optional[str]):
         """Help with the metrics."""
-        self.classes_ = np.unique(feature_vector)
-        self.raw_feature_ = feature_vector
+
+        # NOTE: Narwhals Series name is always a string even when
+        # it comes as an integer from pd.Series!
+        # We are converting it to a pandas to check if the name is a string
+        # and because it will be used with pandas in the MetricFrame
+        self.raw_feature_ = (
+            feature_vector.to_pandas()
+            if isinstance(feature_vector, nw.Series)
+            else feature_vector
+        )
+
+        self.classes_ = np.unique(self.raw_feature_)
 
         self.name_ = "{0}{1}".format(base_name, index)
         if name is not None:
             self.name_ = name
-        elif isinstance(feature_vector, pd.Series):
-            if feature_vector.name is not None:
-                if isinstance(feature_vector.name, str):
-                    self.name_ = feature_vector.name
+        elif isinstance(self.raw_feature_, pd.Series):
+            if self.raw_feature_.name is not None:
+                if isinstance(self.raw_feature_.name, str):
+                    self.name_ = self.raw_feature_.name
                 else:
                     msg = _SERIES_NAME_NOT_STRING.format(
-                        feature_vector.name, type(feature_vector.name)
+                        self.raw_feature_.name, type(self.raw_feature_.name)
                     )
                     raise ValueError(msg)
