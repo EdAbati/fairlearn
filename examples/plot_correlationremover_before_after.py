@@ -23,9 +23,9 @@ CorrelationRemover visualization
 # 'sex' column to illustrate how the CorrelationRemover works.
 # We start with some`import` statements:
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
 from fairlearn.datasets import fetch_diabetes_hospital
 from fairlearn.preprocessing import CorrelationRemover
@@ -62,6 +62,10 @@ X_raw = X_raw[
         "race_AfricanAmerican",
     ]
 ]
+
+# Otherwise the demo doesn't work
+bool_cols = [col for col in X_raw if X_raw[col].dtype == np.bool_]
+X_raw[bool_cols] = X_raw[bool_cols].astype(int)
 
 # %%
 # We are now going to fit the CorrelationRemover to the data,

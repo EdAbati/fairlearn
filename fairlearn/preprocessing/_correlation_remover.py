@@ -1,14 +1,14 @@
 # Copyright (c) Microsoft Corporation and Fairlearn contributors.
 # Licensed under the MIT License.
 
+import narwhals as nw
 import numpy as np
-import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array
 from sklearn.utils.validation import check_is_fitted
 
 
-class CorrelationRemover(BaseEstimator, TransformerMixin):
+class CorrelationRemover(TransformerMixin, BaseEstimator):
     r"""
     A component that filters out sensitive correlations in a dataset.
 
@@ -73,20 +73,21 @@ class CorrelationRemover(BaseEstimator, TransformerMixin):
 
     def _create_lookup(self, X):
         """Create a lookup to handle column names correctly."""
-        if isinstance(X, pd.DataFrame):
+        if isinstance(X, nw.DataFrame):
             self.lookup_ = {c: i for i, c in enumerate(X.columns)}
-            return X.values
         # correctly handle a 1d input
-        if len(X.shape) == 1:
-            return {0: 0}
-        self.lookup_ = {i: i for i in range(X.shape[1])}
-        return X
+        elif len(X.shape) == 1:
+            self.lookup_ = {0: 0}
+        else:
+            self.lookup_ = {i: i for i in range(X.shape[1])}
 
     def fit(self, X, y=None):
         """Learn the projection required to make the dataset uncorrelated with sensitive columns."""  # noqa: E501
+        X = nw.from_native(X, eager_only=True, strict=False)
         self._create_lookup(X)
-        X = self._validate_data(X)
-        X_use, X_sensitive = self._split_X(X)
+        X_array = X.to_numpy() if isinstance(X, nw.DataFrame) else X
+        X_array = self._validate_data(X_array)
+        X_use, X_sensitive = self._split_X(X_array)
         # correctly handle zero provided sensitive features
         if X_sensitive.shape[1] == 0:
             self.sensitive_mean_ = np.array([])
@@ -94,19 +95,21 @@ class CorrelationRemover(BaseEstimator, TransformerMixin):
             self.sensitive_mean_ = X_sensitive.mean()
         X_s_center = X_sensitive - self.sensitive_mean_
         self.beta_, _, _, _ = np.linalg.lstsq(X_s_center, X_use, rcond=None)
-        self.X_shape_ = X.shape
+        self.X_shape_ = X_array.shape
         return self
 
     def transform(self, X):
         """Transform X by applying the correlation remover."""
-        X = check_array(X, estimator=self)
+        X = nw.from_native(X, eager_only=True, strict=False)
+        X_array = X.to_numpy() if isinstance(X, nw.DataFrame) else X
+        X_array = check_array(X_array, estimator=self)
         check_is_fitted(self, ["beta_", "X_shape_", "lookup_", "sensitive_mean_"])
-        if self.X_shape_[1] != X.shape[1]:
+        if self.X_shape_[1] != X_array.shape[1]:
             raise ValueError(
                 f"The trained data has {self.X_shape_[1]} features while this dataset"
                 f" has {X.shape[1]}."
             )
-        X_use, X_sensitive = self._split_X(X)
+        X_use, X_sensitive = self._split_X(X_array)
         X_s_center = X_sensitive - self.sensitive_mean_
         X_filtered = X_use - X_s_center.dot(self.beta_)
         X_use = np.atleast_2d(X_use)
