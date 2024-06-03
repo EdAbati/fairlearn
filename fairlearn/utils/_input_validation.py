@@ -3,8 +3,10 @@
 
 import logging
 
+import narwhals as nw
 import numpy as np
 import pandas as pd
+from narwhals.translate import get_pandas
 from sklearn.utils.validation import check_array, check_consistent_length, check_X_y
 
 logger = logging.getLogger(__file__)
@@ -79,11 +81,18 @@ def _validate_and_reformat_input(
         estimator.
 
     """
+    if X is None:
+        raise ValueError(_MESSAGE_X_NONE)
+    X = nw.from_native(X, strict=False)
+    nw_namespace = (
+        get_pandas() if isinstance(X, np.ndarray) else nw.get_native_namespace(X)
+    )
     if y is not None:
+        y = nw.from_native(y, allow_series=True, strict=False)
         # calling check_X_y with a 2-dimensional y causes a warning, so ensure it is 1-dimensional
         if isinstance(y, np.ndarray) and len(y.shape) == 2 and y.shape[1] == 1:
             y = y.reshape(-1)
-        elif isinstance(y, pd.DataFrame) and y.shape[1] == 1:
+        elif isinstance(y, nw.DataFrame) and y.shape[1] == 1:
             y = y.to_numpy().reshape(-1)
 
         X, y = check_X_y(X, y, dtype=None, force_all_finite=False)
@@ -106,7 +115,7 @@ def _validate_and_reformat_input(
         if len(sensitive_features.shape) > 1 and sensitive_features.shape[1] > 1:
             sensitive_features = _merge_columns(sensitive_features)
 
-        sensitive_features = pd.Series(sensitive_features.squeeze())
+        sensitive_features = nw_namespace.Series(sensitive_features.squeeze())
     elif expect_sensitive_features:
         raise ValueError(_MESSAGE_SENSITIVE_FEATURES_NONE)
 
@@ -120,17 +129,17 @@ def _validate_and_reformat_input(
         if len(control_features.shape) > 1 and control_features.shape[1] > 1:
             control_features = _merge_columns(control_features)
 
-        control_features = pd.Series(control_features.squeeze())
+        control_features = nw_namespace.Series(control_features.squeeze())
 
     # If we don't have a y, then need to fiddle with return type to
     # avoid a warning from pandas
     if y is not None:
-        result_y = pd.Series(y)
+        result_y = nw_namespace.Series(y)
     else:
-        result_y = pd.Series(dtype="float64")
+        result_y = nw.to_native(nw.Series(nw_namespace.Series()).cast(nw.Float64))
 
     return (
-        pd.DataFrame(X),
+        nw_namespace.DataFrame(X),
         result_y,
         sensitive_features,
         control_features,
