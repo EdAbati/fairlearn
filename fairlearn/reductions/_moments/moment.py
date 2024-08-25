@@ -1,7 +1,10 @@
 # Copyright (c) Microsoft Corporation and Fairlearn contributors.
 # Licensed under the MIT License.
+from typing import Union
 
-import pandas as pd
+import narwhals as nw
+
+# import pandas as pd
 
 _GROUP_ID = "group_id"
 _EVENT = "event"
@@ -27,7 +30,9 @@ class Moment:
     def __init__(self):
         self.data_loaded = False
 
-    def load_data(self, X, y: pd.Series, *, sensitive_features: pd.Series = None):
+    def load_data(
+        self, X, y: nw.Series, *, sensitive_features: Union[nw.Series, None] = None
+    ):
         """Load a set of data for use by this object.
 
         Parameters
@@ -40,15 +45,25 @@ class Moment:
             The sensitive feature vector (default None)
         """
         assert self.data_loaded is False, "data can be loaded only once"
+
         if sensitive_features is not None:
-            assert isinstance(sensitive_features, pd.Series)
-        self.X = X
-        self._y = y
-        self.tags = pd.DataFrame({_LABEL: y})
+            # TODO: remove this
+            sensitive_features = nw.from_native(sensitive_features, series_only=True)
+            assert isinstance(sensitive_features, nw.Series)
+        self.X = nw.from_native(X, strict=False)
+        self._y = nw.from_native(y, strict=False, allow_series=True)
+        self.tags: nw.DataFrame = self._y.alias(_LABEL).to_frame()
+        print(self.tags.columns)
         if sensitive_features is not None:
-            self.tags[_GROUP_ID] = sensitive_features
+            self.tags = self.tags.with_columns(sensitive_features.alias(_GROUP_ID))
         self.data_loaded = True
         self._gamma_descr = None
+
+    def _to_native_everything(self):
+        # TODO: remove
+        self.X = nw.to_native(self.X, strict=False)
+        self._y = nw.to_native(self._y, strict=False)
+        self.tags = nw.to_native(self.tags, strict=False)
 
     @property
     def total_samples(self):

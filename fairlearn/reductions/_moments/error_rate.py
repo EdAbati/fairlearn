@@ -71,6 +71,7 @@ class ErrorRate(ClassificationMoment):
         )
         # The following uses X  so that the estimators get X untouched
         super().load_data(X, y_train, sensitive_features=sf_train)
+        self._to_native_everything()
         self.index = [_ALL]
 
     def gamma(self, predictor) -> pd.Series:

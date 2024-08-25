@@ -39,14 +39,14 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from fairlearn.datasets import fetch_adult
-from fairlearn.reductions import DemographicParity, ErrorRate, GridSearch
 from fairlearn.metrics import (
     MetricFrame,
-    selection_rate,
     count,
     plot_model_comparison,
+    selection_rate,
     selection_rate_difference,
 )
+from fairlearn.reductions import DemographicParity, ErrorRate, GridSearch
 
 # %%
 # We can now load and inspect the data by using the `fairlearn.datasets` module:
@@ -131,6 +131,9 @@ metric_frame.by_group.plot.bar(
 # ignoring a sensitive feature when fitting a predictor rarely eliminates
 # unfairness. There will generally be enough other features correlated with the
 # removed feature to lead to disparate impact.
+
+DemographicParity()
+
 
 # %%
 # Mitigation with GridSearch

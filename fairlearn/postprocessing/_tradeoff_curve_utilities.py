@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation and Fairlearn contributors.
 # Licensed under the MIT License.
 
+import narwhals as nw
 import numpy as np
 import pandas as pd
 from sklearn.utils import Bunch
@@ -76,8 +77,8 @@ def _tradeoff_curve(
 
     Parameters
     ----------
-    data : pandas.DataFrame
-        Data frame with columns 'score' and 'label'.
+    data : DataFrame
+        Dataframe with columns 'score' and 'label'.
 
     sensitive_feature_value : str or int
         The sensitive feature value of the samples providing in `data`. Only used
@@ -218,7 +219,7 @@ def _calculate_tradeoff_points(
     thresholds that could be set based on the available scores.
 
     :param data: the DataFrame containing scores and labels
-    :type data: pandas.DataFrame
+    :type data: DataFrame
     :param sensitive_feature_value: the sensitive feature value of the samples provided in `data`
     :type sensitive_feature_value: str or int
     :param flip: if True flip points below the ROC diagonal into points above by applying negative
@@ -299,12 +300,13 @@ def _get_scores_labels_and_counts(data):
     The samples are sorted into descending order.
 
     :param data: the DataFrame containing scores and labels
-    :type data: pandas.DataFrame
+    :type data: DataFrame
     :return: a tuple containing the sorted scores, labels, the number of samples, the number
         of positive samples, and the number of negative samples
     :rtype: tuple of list, list, int, int, int
     """
-    data_sorted = data.sort_values(by=SCORE_KEY, ascending=False)
+    data = nw.from_native(data)
+    data_sorted = data.sort(by=SCORE_KEY, descending=True)
 
     scores = list(data_sorted[SCORE_KEY])
     labels = list(data_sorted[LABEL_KEY])
