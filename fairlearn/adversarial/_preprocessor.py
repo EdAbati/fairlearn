@@ -1,22 +1,25 @@
 # Copyright (c) Fairlearn contributors.
 # Licensed under the MIT License.
 
-import fairlearn.utils._compatibility as compat
-from ._constants import (
-    _TYPE_COMPLIANCE_ERROR,
-    _TYPE_CHECK_ERROR,
-    _ARG_ERROR_MESSAGE,
-    _TYPE_UNKNOWN_ERROR,
-    _INVALID_OHE,
-)
-from sklearn.utils import check_array
-from sklearn.preprocessing import OneHotEncoder
-from pandas import Series, DataFrame
-from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.utils.multiclass import type_of_target
 from numpy import all as np_all
+from numpy import isin
 from numpy import sum as np_sum
-from numpy import unique, isin
+from numpy import unique
+from pandas import DataFrame
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.utils import check_array
+from sklearn.utils.multiclass import type_of_target
+
+import fairlearn.utils._compatibility as compat
+
+from ._constants import (
+    _ARG_ERROR_MESSAGE,
+    _INVALID_OHE,
+    _TYPE_CHECK_ERROR,
+    _TYPE_COMPLIANCE_ERROR,
+    _TYPE_UNKNOWN_ERROR,
+)
 
 # FIXME: memoize type_of_target. It is quite expensive and called repeatedly.
 
@@ -71,8 +74,7 @@ class FloatTransformer(BaseEstimator, TransformerMixin):
                 self.dist_assumption = "classification"
             else:
                 raise ValueError(
-                    "Can not interpret keyword for preprocessing transformer: "
-                    + transformer
+                    "Can not interpret keyword for preprocessing transformer: " + transformer
                 )
         # TODO perhaps warn that the user is responsible for preprocessing
         # correctly to float-matrices?
@@ -104,9 +106,7 @@ class FloatTransformer(BaseEstimator, TransformerMixin):
         if init:
             self.input_dim_ = X.ndim
             if self.input_dim_ > 2:
-                raise ValueError(
-                    "Data can be at most two dimensional, not %d" % self.input_dim_
-                )
+                raise ValueError("Data can be at most two dimensional, not %d" % self.input_dim_)
         else:
             if X.ndim != self.input_dim_:
                 raise ValueError("Dimension of data is inconsistent with previous call")
@@ -141,8 +141,7 @@ class FloatTransformer(BaseEstimator, TransformerMixin):
                 )
                 self.transform_.fit(X)
                 self.n_features_out_ = sum(
-                    len(cat) if len(cat) != 2 else 1
-                    for cat in self.transform_.categories_
+                    len(cat) if len(cat) != 2 else 1 for cat in self.transform_.categories_
                 )
             # elif "multilabel-indicator" needn't be encoded, so we do not create
             # an encoder then.
@@ -168,14 +167,11 @@ class FloatTransformer(BaseEstimator, TransformerMixin):
         """Transform X using the fitted encoder or passthrough."""
         if isinstance(self.transformer, str) or self.transformer is None:
             if not isinstance(X, self.in_type_):
-                raise ValueError(
-                    _ARG_ERROR_MESSAGE.format("X", "of type " + self.in_type_)
-                )
+                raise ValueError(_ARG_ERROR_MESSAGE.format("X", "of type " + self.in_type_))
             inferred = type_of_target(X)
             if not inferred == self.inferred_type_:
                 raise ValueError(
-                    "Inferred distribution type of X does not match "
-                    + self.inferred_type_
+                    "Inferred distribution type of X does not match " + self.inferred_type_
                 )
             if not _get_type(X, self.dist_assumption) == self.dist_type_:
                 raise ValueError(_TYPE_CHECK_ERROR.format(self.dist_type_))
@@ -192,33 +188,17 @@ class FloatTransformer(BaseEstimator, TransformerMixin):
 
     def inverse_transform(self, y):
         """Transform y back to X using the inverse transform of the encoder."""
-        inverse = None
-        if isinstance(self.transformer, str):
-            if self.inferred_type_ in ["binary", "multiclass"]:
-                inverse = self.transform_.inverse_transform(y)
-            else:
-                # This is for:
-                # self.inferred_type_ in "continuous", "continuous-multioutput",
-                #                        "multilabel-indicator"
-                inverse = y
-
-            if self.input_dim_ == 1:
-                inverse = inverse.reshape(-1)
-
-            # Because we are kind, we try to translate back to the original data
-            # type, but we only support DataFrame, Series, list(, ndarray).
-            if self.in_type_ == DataFrame:
-                inverse = DataFrame(inverse, columns=self.columns_)
-            elif self.in_type_ == Series:
-                inverse = Series(inverse)
-            elif self.in_type_ == list:
-                inverse = inverse.tolist()
-        elif self.transformer is None:
+        if (
+            self.transformer is None
+            or isinstance(self.transformer, str)
+            and self.inferred_type_
+            in ["continuous", "continuous-multioutput", "multilabel-indicator"]
+        ):
             inverse = y
         else:
             inverse = self.transform_.inverse_transform(y)
 
-        return inverse
+        return inverse.reshape(-1) if self.input_dim_ == 1 else inverse
 
 
 def _get_type(data, assumption):

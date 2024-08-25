@@ -1,39 +1,36 @@
 # Copyright (c) Fairlearn contributors.
 # Licensed under the MIT License.
 
+import logging
 from math import ceil
 from time import time
 
+from numpy import arange, argmax, unique, zeros
+from sklearn.base import (
+    BaseEstimator,
+    ClassifierMixin,
+    RegressorMixin,
+    TransformerMixin,
+)
+from sklearn.exceptions import NotFittedError
 from sklearn.utils import check_scalar
+from sklearn.utils.validation import (
+    check_consistent_length,
+    check_is_fitted,
+    check_random_state,
+)
 
+from ._backend_engine import BackendEngine
 from ._constants import (
+    _CALLBACK_RETURNS_ERROR,
     _IMPORT_ERROR_MESSAGE,
     _KWARG_ERROR_MESSAGE,
     _PREDICTION_FUNCTION_AMBIGUOUS,
     _PROGRESS_UPDATE,
-    _CALLBACK_RETURNS_ERROR,
 )
-from ._backend_engine import BackendEngine
+from ._preprocessor import FloatTransformer, _get_type
 from ._pytorch_engine import PytorchEngine
 from ._tensorflow_engine import TensorflowEngine
-from ._preprocessor import (
-    FloatTransformer,
-    _get_type,
-)
-from sklearn.base import (
-    ClassifierMixin,
-    RegressorMixin,
-    BaseEstimator,
-    TransformerMixin,
-)
-from sklearn.utils.validation import (
-    check_is_fitted,
-    check_random_state,
-    check_array,
-)
-from sklearn.exceptions import NotFittedError
-from numpy import zeros, argmax, arange
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -211,8 +208,8 @@ class _AdversarialFairness(BaseEstimator):
         self,
         *,
         backend="auto",
-        predictor_model=[],  # [] is a NN with no hidden layers.
-        adversary_model=[],
+        predictor_model=None,
+        adversary_model=None,
         predictor_loss="auto",
         adversary_loss="auto",
         predictor_function="auto",
@@ -261,7 +258,7 @@ class _AdversarialFairness(BaseEstimator):
         self.warm_start = warm_start
         self.random_state = random_state
 
-    def __setup(self, X, Y, A):
+    def __setup(self, X, y, A):
         """
         Initialize the entire model from the parameters and the given data.
 
@@ -310,13 +307,9 @@ class _AdversarialFairness(BaseEstimator):
             (self.epochs, "epochs"),
             (self.max_iter, "max_iter"),
         ):
-            check_scalar(
-                kw, kwname, (int, float), min_val=-1, include_boundaries="left"
-            )
+            check_scalar(kw, kwname, (int, float), min_val=-1, include_boundaries="left")
             if kw <= 0.0 and kw != -1:
-                raise ValueError(
-                    _KWARG_ERROR_MESSAGE.format(kwname, "a positive number or -1")
-                )
+                raise ValueError(_KWARG_ERROR_MESSAGE.format(kwname, "a positive number or -1"))
 
         for kw, kwname in (
             (self.shuffle, "shuffle"),
@@ -331,9 +324,7 @@ class _AdversarialFairness(BaseEstimator):
             if not callable(self.callbacks):
                 if not isinstance(self.callbacks, list):
                     raise ValueError(
-                        _KWARG_ERROR_MESSAGE.format(
-                            "callbacks", "a callable or list of callables"
-                        )
+                        _KWARG_ERROR_MESSAGE.format("callbacks", "a callable or list of callables")
                     )
                 else:
                     for cb in self.callbacks:
@@ -386,11 +377,9 @@ class _AdversarialFairness(BaseEstimator):
             else:
                 return kw_or_func
 
-        self.predictor_loss_ = read_kw(Y, self.predictor_loss, "predictor_loss")
+        self.predictor_loss_ = read_kw(y, self.predictor_loss, "predictor_loss")
         self.adversary_loss_ = read_kw(A, self.adversary_loss, "adversary_loss")
-        self.predictor_function_ = read_kw(
-            Y, self.predictor_function, "predictor_function"
-        )
+        self.predictor_function_ = read_kw(y, self.predictor_function, "predictor_function")
 
         for kw, kwname in (
             (self.y_transform, "y_transform"),
@@ -408,14 +397,13 @@ class _AdversarialFairness(BaseEstimator):
                 raise ValueError(
                     _KWARG_ERROR_MESSAGE.format(
                         kwname,
-                        "a keyword or a sklearn Transformer"
-                        + "(subclass TransformerMixin)",
+                        "a keyword or a sklearn Transformer" + "(subclass TransformerMixin)",
                     )
                 )
 
         self._y_transform = FloatTransformer(transformer=self.y_transform)
         self._sf_transform = FloatTransformer(transformer=self.sf_transform)
-        self._y_transform.fit(Y)
+        self._y_transform.fit(y)
         self._sf_transform.fit(A)
 
         if self.cuda and not isinstance(self.cuda, str):
@@ -432,7 +420,7 @@ class _AdversarialFairness(BaseEstimator):
 
         # Initialize backend
         # here, losses and optimizers are also set up.
-        self.backendEngine_ = self.backend_(self, X, Y, A)
+        self.backendEngine_ = self.backend_(self, X, y, A)
 
         # Sklearn-parameters
         self.n_features_in_ = X.shape[1]
@@ -460,7 +448,8 @@ class _AdversarialFairness(BaseEstimator):
             Array-like containing the sensitive features of the
             training data.
         """
-        X, Y, A = self._validate_input(X, y, sensitive_features, reinitialize=True)
+        X, y, A = self._validate_input(X, y, sensitive_features, reinitialize=True)
+        self.classes_ = unique(y)
 
         # Not checked in __setup, because partial_fit may not require it.
         if self.epochs == -1 and self.max_iter == -1:
@@ -473,6 +462,16 @@ class _AdversarialFairness(BaseEstimator):
                     ),
                 )
             )
+
+        if self.predictor_model is not None:
+            predictor_model = self.predictor_model
+        else:
+            predictor_model = []  # [] is a NN with no hidden layers # noqa: F841
+
+        if self.adversary_model is not None:
+            adversary_model = self.adversary_model
+        else:
+            adversary_model = []  # noqa: F841
 
         if self.batch_size == -1:
             batch_size = X.shape[0]
@@ -494,7 +493,7 @@ class _AdversarialFairness(BaseEstimator):
         self.step_ = 0
         for epoch in range(epochs):
             if self.shuffle:
-                X, Y, A = self.backendEngine_.shuffle(X, Y, A)
+                X, y, A = self.backendEngine_.shuffle(X, y, A)
             for batch in range(batches):
                 if self.progress_updates:
                     if (time() - last_update_time) > self.progress_updates:
@@ -505,10 +504,9 @@ class _AdversarialFairness(BaseEstimator):
                             and len(predictor_losses) >= 1
                             and len(adversary_losses) >= 1
                         ):
-                            ETA = (
-                                (last_update_time - start_time + 1e-6)
-                                / (progress + 1e-6)
-                            ) * (1 - progress)
+                            ETA = ((last_update_time - start_time + 1e-6) / (progress + 1e-6)) * (
+                                1 - progress
+                            )
                             # + 1e-6 for numerical stability
                             logger.info(
                                 _PROGRESS_UPDATE.format(  # noqa : G001
@@ -533,7 +531,7 @@ class _AdversarialFairness(BaseEstimator):
                     min((batch + 1) * batch_size, X.shape[0]),
                 )
                 (LP, LA) = self.backendEngine_.train_step(
-                    X[batch_slice], Y[batch_slice], A[batch_slice]
+                    X[batch_slice], y[batch_slice], A[batch_slice]
                 )
                 predictor_losses.append(LP)
                 adversary_losses.append(LA)
@@ -573,12 +571,12 @@ class _AdversarialFairness(BaseEstimator):
             Array-like containing the sensitive feature of the
             training data.
         """
-        X, Y, A = self._validate_input(X, y, sensitive_features, reinitialize=False)
-        self.backendEngine_.train_step(X, Y, A)
+        X, y, A = self._validate_input(X, y, sensitive_features, reinitialize=False)
+        self.backendEngine_.train_step(X, y, A)
 
         return self
 
-    def decision_function(self, X):
+    def _raw_predict(self, X):
         """
         Compute predictor output for given test data.
 
@@ -593,10 +591,16 @@ class _AdversarialFairness(BaseEstimator):
             Two-dimensional array containing the model's (soft-)predictions
         """
         check_is_fitted(self)
-        X = check_X(X)
-
-        Y_pred = self.backendEngine_.evaluate(X)
-        return Y_pred
+        X = self._validate_data(
+            X,
+            accept_sparse=False,
+            accept_large_sparse=False,
+            dtype=float,
+            allow_nd=True,
+            reset=False,
+        )
+        y_pred = self.backendEngine_.evaluate(X)
+        return y_pred
 
     def predict(self, X):
         """
@@ -616,15 +620,12 @@ class _AdversarialFairness(BaseEstimator):
             array-like containing the model's predictions fed through
             the (discrete) :code:`predictor_function`
         """
-        check_is_fitted(self)
-        X = check_X(X)
+        y_pred = self._raw_predict(X)
+        y_pred = self.predictor_function_(y_pred)
+        y_pred = self._y_transform.inverse_transform(y_pred)
+        return y_pred
 
-        Y_pred = self.backendEngine_.evaluate(X)
-        Y_pred = self.predictor_function_(Y_pred)
-        Y_pred = self._y_transform.inverse_transform(Y_pred)
-        return Y_pred
-
-    def _validate_input(self, X, Y, A, reinitialize=False):
+    def _validate_input(self, X, y, A, reinitialize=False):
         """
         Validate the input data and possibly setup this estimator.
 
@@ -633,7 +634,17 @@ class _AdversarialFairness(BaseEstimator):
         then always call `__setup`.
         """
         if not self.skip_validation:
-            X = check_X(X)
+            X = self._validate_data(
+                X,
+                accept_sparse=False,
+                accept_large_sparse=False,
+                dtype=float,
+                allow_nd=True,
+            )
+            y = self._validate_data(y, ensure_2d=False)
+
+        check_consistent_length(X, y)
+        check_consistent_length(X, A)
 
         try:  # TODO check this
             check_is_fitted(self)
@@ -644,31 +655,23 @@ class _AdversarialFairness(BaseEstimator):
         if A is None:
             logger.warning("No sensitive_features provided")
             logger.warning("Setting sensitive_features to zeros")
-            A = zeros(len(Y))
+            A = zeros(len(y))
 
         if (not is_fitted) or (reinitialize):
-            self.__setup(X, Y, A)
+            self.__setup(X, y, A)
 
         if not self.skip_validation:
-            Y = self._y_transform.transform(Y)
+            y = self._y_transform.transform(y)
             A = self._sf_transform.transform(A)
-
-        # Check for equal number of samples
-        if not (X.shape[0] == Y.shape[0] and X.shape[0] == A.shape[0]):
-            raise ValueError(
-                "Input data has an ambiguous number of rows: {}, {}, {}.".format(
-                    X.shape[0], Y.shape[0], A.shape[0]
-                )
-            )
 
         if not self.skip_validation:
             # Some backendEngine may want to do some additional preprocessing,
             # such as moving to GPU.
             attr = getattr(self.backendEngine_, "validate_input", None)
             if attr:
-                X, Y, A = attr(X, Y, A)
+                X, y, A = attr(X, y, A)
 
-        return X, Y, A
+        return X, y, A
 
     def _validate_backend(self):
         """
@@ -738,9 +741,7 @@ class _AdversarialFairness(BaseEstimator):
         # The keyword self.backend was weird
         if self.backend not in ["torch", "tensorflow", "auto"]:
             raise ValueError(
-                _KWARG_ERROR_MESSAGE.format(
-                    "backend", "one of ['auto', 'torch','tensorflow']"
-                )
+                _KWARG_ERROR_MESSAGE.format("backend", "one of ['auto', 'torch','tensorflow']")
             )
         # Or no backend is installed
         if not (torch_installed or tensorflow_installed):
@@ -772,9 +773,9 @@ class _AdversarialFairness(BaseEstimator):
         elif isinstance(self.predictor_function_, str):
             kw = self.predictor_function_
             if kw == "binary":
-                self.predictor_function_ = lambda pred: (
-                    pred >= self.threshold_value
-                ).astype(float)
+                self.predictor_function_ = lambda pred: (pred >= self.threshold_value).astype(
+                    float
+                )
             elif kw == "category":
 
                 def loss(pred):
@@ -796,6 +797,13 @@ class _AdversarialFairness(BaseEstimator):
     def __sklearn_is_fitted__(self):
         """Speed up check_is_fitted."""
         return hasattr(self, "_is_setup")
+
+    def _more_tags(self):
+        return {
+            "_xfail_checks": {
+                "check_estimators_pickle": "pickling is not possible.",
+            }
+        }
 
 
 class AdversarialFairnessClassifier(_AdversarialFairness, ClassifierMixin):
@@ -952,8 +960,8 @@ class AdversarialFairnessClassifier(_AdversarialFairness, ClassifierMixin):
         self,
         *,
         backend="auto",
-        predictor_model=[],  # [] is a NN with no hidden layers (linear NN).
-        adversary_model=[],
+        predictor_model=None,
+        adversary_model=None,
         predictor_optimizer="Adam",
         adversary_optimizer="Adam",
         constraints="demographic_parity",
@@ -994,6 +1002,27 @@ class AdversarialFairnessClassifier(_AdversarialFairness, ClassifierMixin):
             warm_start=warm_start,
             random_state=random_state,
         )
+
+    def _more_tags(self):
+        return {
+            "_xfail_checks": {
+                "check_estimators_pickle": "pickling is not possible.",
+                "check_estimators_overwrite_params": "pickling is not possible.",
+                "check_non_transformer_estimators_n_iter": (
+                    "estimator is missing the _n_iter attribute."
+                ),
+                "check_classifiers_regression_target": ("the data cannot look continuous."),
+                "check_estimators_partial_fit_n_features": ("number of features cannot change."),
+                "check_classifiers_classes": (
+                    "decision function output must match classifier output."
+                ),
+                "check_fit_non_negative": (
+                    "a ValueError should be raised if output is negative. "
+                ),
+                "check_supervised_y_2d": "DataConversionWarning not caught.",
+            },
+            "poor_score": True,
+        }
 
 
 class AdversarialFairnessRegressor(_AdversarialFairness, RegressorMixin):
@@ -1141,8 +1170,8 @@ class AdversarialFairnessRegressor(_AdversarialFairness, RegressorMixin):
         self,
         *,
         backend="auto",
-        predictor_model=[],  # [] is a NN with no hidden layers (linear NN).
-        adversary_model=[],
+        predictor_model=None,
+        adversary_model=None,
         predictor_optimizer="Adam",
         adversary_optimizer="Adam",
         constraints="demographic_parity",
@@ -1184,23 +1213,42 @@ class AdversarialFairnessRegressor(_AdversarialFairness, RegressorMixin):
             random_state=random_state,
         )
 
-
-def check_X(X):
-    """
-    Validate the input array, and possible coerce to 2D.
-
-    Calls :code:`sklearn.utils.check_array` on parameter X with the
-    parameters suited for Adversarial Mitigation.
-
-    Returns
-    -------
-    X : numpy.ndarray
-        Cleaned data.
-    """
-    return check_array(
-        X,
-        accept_sparse=False,
-        accept_large_sparse=False,
-        dtype=float,
-        allow_nd=True,
-    ).astype(float)
+    def _more_tags(self):
+        return {
+            "_xfail_checks": {
+                "check_estimators_pickle": "pickling is not possible.",
+                "check_fit2d_predict1d": ("regressor estimator cannot look like multiclass."),
+                "check_dict_unchanged": ("regressor estimator cannot look like binary."),
+                "check_dont_overwrite_parameters": (
+                    "regressor estimator cannot look like multiclass."
+                ),
+                "check_methods_sample_order_invariance": (
+                    "regressor estimator cannot look like multiclass."
+                ),
+                "check_methods_subset_invariance": (
+                    "regressor estimator cannot look like multiclass."
+                ),
+                "check_non_transformer_estimators_n_iter": (
+                    "regressor estimator cannot look like multiclass."
+                ),
+                "check_regressors_int": ("regressor estimator cannot look like multiclass."),
+                "check_supervised_y_2d": ("regressor estimator cannot look like multiclass."),
+                "check_estimators_overwrite_params": (
+                    "regressor estimator cannot look like multiclass."
+                ),
+                "check_estimators_nan_inf": ("regressor estimator cannot look like binary."),
+                "check_estimators_partial_fit_n_features": (
+                    "regressor estimator cannot look like multiclass."
+                ),
+                "check_pipeline_consistency": ("regressor estimator cannot look like binary."),
+                "check_dtype_object": ("regressor estimator cannot look like multiclass."),
+                "check_estimators_fit_returns_self": (
+                    "regressor estimator cannot look like multiclass."
+                ),
+                "check_fit_score_takes_y": ("regressor estimator cannot look like multiclass."),
+                "check_estimators_dtypes": ("regressor estimator cannot look like multiclass."),
+                "check_fit2d_1feature": ("regressor estimator cannot look like binary."),
+                "check_fit2d_1sample": ("regressor estimator cannot look like binary."),
+                "check_regressors_train": ("predictions shape should match targets shape."),
+            },
+        }

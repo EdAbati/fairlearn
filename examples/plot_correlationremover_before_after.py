@@ -74,9 +74,7 @@ X_raw[bool_cols] = X_raw[bool_cols].astype(int)
 
 cr = CorrelationRemover(sensitive_feature_ids=["race_AfricanAmerican"])
 X_cr = cr.fit_transform(X_raw)
-X_cr = pd.DataFrame(
-    X_cr, columns=["time_in_hospital", "had_inpatient_days_True", "medicare_True"]
-)
+X_cr = pd.DataFrame(X_cr, columns=["time_in_hospital", "had_inpatient_days_True", "medicare_True"])
 X_cr["race_AfricanAmerican"] = X_raw["race_AfricanAmerican"]
 
 cr_alpha = CorrelationRemover(sensitive_feature_ids=["race_AfricanAmerican"], alpha=0.5)
