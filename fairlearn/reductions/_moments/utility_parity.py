@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation and Fairlearn contributors.
 # Licensed under the MIT License.
 
+import narwhals as nw
 import numpy as np
 import pandas as pd
 
@@ -28,6 +29,7 @@ def _combine_event_and_control(event: str, control: str) -> str:
 
 
 def _merge_event_and_control_columns(event_col, control_col):
+    event_col = nw.from_native(event_col, series_only=True, strict=False)
     if control_col is None:
         return event_col
     else:
@@ -90,7 +92,7 @@ class UtilityParity(ClassificationMoment):
 
     def __init__(self, *, difference_bound=None, ratio_bound=None, ratio_bound_slack=0.0):
         """Initialize with the ratio value."""
-        super(UtilityParity, self).__init__()
+        super().__init__()
         if (difference_bound is None) and (ratio_bound is None):
             self.eps = _DEFAULT_DIFFERENCE_BOUND
             self.ratio = 1.0
@@ -113,10 +115,10 @@ class UtilityParity(ClassificationMoment):
     def load_data(
         self,
         X,
-        y: pd.Series,
+        y: nw.Series,
         *,
-        sensitive_features: pd.Series,
-        event: pd.Series = None,
+        sensitive_features: nw.Series,
+        event: nw.Series = None,
         utilities=None,
     ):
         """Load the specified data into this object.
@@ -134,7 +136,9 @@ class UtilityParity(ClassificationMoment):
 
         """
         super().load_data(X, y, sensitive_features=sensitive_features)
-        self.tags[_EVENT] = event
+
+        self.tags = self.tags.with_columns(nw.from_native(event, series_only=True).alias(_EVENT))
+        print(self.tags.columns)
         if utilities is None:
             utilities = np.vstack(
                 [
@@ -144,8 +148,15 @@ class UtilityParity(ClassificationMoment):
             ).T
         self.utilities = utilities
         self.utility_diff = self.utilities[:, 1] - self.utilities[:, 0]
-        self.prob_event = self.tags.groupby(_EVENT).size() / self.total_samples
-        self.prob_group_event = self.tags.groupby([_EVENT, _GROUP_ID]).size() / self.total_samples
+        self._to_native_everything()
+
+        self.prob_event = self.tags.group_by(_EVENT).agg(nw.len())["len"] / self.total_samples
+
+        self.prob_group_event = (
+            self.tags.group_by([_EVENT, _GROUP_ID]).agg(nw.len())["len"] / self.total_samples
+        )
+
+        self.prob_group_event.with_columns()
         signed = pd.concat(
             [self.prob_group_event, self.prob_group_event],
             keys=["+", "-"],
@@ -317,7 +328,7 @@ class DemographicParity(UtilityParity):
             sensitive_features=sensitive_features,
             control_features=control_features,
         )
-
+        # TODO narwhalise
         base_event = pd.Series(data=_ALL, index=y_train.index)
         event = _merge_event_and_control_columns(base_event, cf_train)
         super().load_data(X, y_train, event=event, sensitive_features=sf_train)

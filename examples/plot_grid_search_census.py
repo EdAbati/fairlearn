@@ -132,6 +132,8 @@ metric_frame.by_group.plot.bar(
 # ignoring a sensitive feature when fitting a predictor rarely eliminates
 # unfairness. There will generally be enough other features correlated with the
 # removed feature to lead to disparate impact.
+DemographicParity()
+
 
 # %%
 # Mitigation with GridSearch

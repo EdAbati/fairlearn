@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation and Fairlearn contributors.
 # Licensed under the MIT License.
 
+import narwhals as nw
 import numpy as np
 import pandas as pd
 from sklearn.utils import Bunch
@@ -73,8 +74,8 @@ def _tradeoff_curve(
 
     Parameters
     ----------
-    data : pandas.DataFrame
-        Data frame with columns 'score' and 'label'.
+    data : DataFrame
+        Dataframe with columns 'score' and 'label'.
 
     sensitive_feature_value : str or int
         The sensitive feature value of the samples providing in `data`. Only used
@@ -150,7 +151,7 @@ def _interpolate_curve(data, x_col, y_col, content_col, x_grid):
 
     Parameters
     ----------
-    data : :class:`pandas:pandas.DataFrame`
+    data :
         The convex hull data points.
     x_col : str
         Name of the x-column in `data`.
@@ -163,7 +164,7 @@ def _interpolate_curve(data, x_col, y_col, content_col, x_grid):
 
     Returns
     -------
-    result : :class:`pandas:pandas.DataFrame`
+    result :
         DataFrame with the points of the interpolated curve.
     """
     data_transpose = data.transpose()
@@ -217,7 +218,7 @@ def _calculate_tradeoff_points(
 
     Parameters
     ----------
-    data : :class:`pandas:pandas.DataFrame`
+    data :
         The DataFrame containing scores and labels.
     sensitive_feature_value : str, int
         The sensitive feature value of the samples provided in `data`.
@@ -227,7 +228,7 @@ def _calculate_tradeoff_points(
 
     Returns
     -------
-    result : :class:`pandas:pandas.DataFrame`
+    result :
         The ROC curve points with their corresponding threshold operations.
     """
     scores, labels, n, n_positive, n_negative = _get_scores_labels_and_counts(data)
@@ -301,7 +302,7 @@ def _get_scores_labels_and_counts(data):
 
     Parameters
     ----------
-    data : :class:`pandas:pandas.DataFrame`
+    data :
         The DataFrame containing scores and labels.
 
     Returns
@@ -310,7 +311,8 @@ def _get_scores_labels_and_counts(data):
         A tuple containing the sorted scores, labels, the number of samples, \
         the number of positive samples, and the number of negative samples.
     """
-    data_sorted = data.sort_values(by=SCORE_KEY, ascending=False)
+    data = nw.from_native(data)
+    data_sorted = data.sort(by=SCORE_KEY, descending=True)
 
     scores = list(data_sorted[SCORE_KEY])
     labels = list(data_sorted[LABEL_KEY])
